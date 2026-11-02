@@ -72,3 +72,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+# Murmur v2 benchmark results and local scratch files
+results/
+scratch_*
