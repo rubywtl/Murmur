@@ -79,6 +79,20 @@ huggingface-cli login   # accept the terms of pyannote/speaker-diarization-3.1 f
 ```
 
 <details>
+<summary>Faster diarization with Nemotron (optional)</summary>
+
+[Nemotron-3-Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization) can replace pyannote
+with `diarizer="nemotron"` (CLI: `--diarizer nemotron`). It is not gated, so it needs no Hugging Face
+token. It needs NeMo 3.1 or newer, which is not on PyPI yet (3.0.0 cannot load the model):
+
+```bash
+pip install "nemo-toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git"
+```
+NeMo installs next to pyannote in the `murmur` environment (it downgrades `lightning` to 2.4, which
+pyannote supports).
+</details>
+
+<details>
 <summary>vLLM servers (VibeVoice-ASR, MOSS-Transcribe-Diarize)</summary>
 
 ```bash
@@ -115,7 +129,7 @@ with Murmur.load("vibevoice") as m:   # or Murmur.load("moss", language="zh")
 <summary>Options, CLI and a separately started server</summary>
 
 `Murmur.load` options: `chunk_s` (default 330), `batch_size` (default 8), `draft_windows`,
-`language` (`"en"` or `"zh"`), `diarize`, `gpu`. `transcribe(..., single_pass=True)` runs the
+`language` (`"en"` or `"zh"`), `diarize`, `diarizer` (`"pyannote"` or `"nemotron"`), `gpu`. `transcribe(..., single_pass=True)` runs the
 single-pass baseline.
 
 ```bash

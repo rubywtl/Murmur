@@ -31,7 +31,7 @@ def _serve(a) -> int:
 def _transcribe(a) -> int:
     from .api import Murmur
     with Murmur.load(a.model, url=a.url, draft_dir=a.draft_dir, chunk_s=a.chunk_s, batch_size=a.batch_size,
-                     language=a.language, gpu=a.gpu, diarize=not a.no_diarize,
+                     language=a.language, gpu=a.gpu, diarize=not a.no_diarize, diarizer=a.diarizer,
                      draft_windows=None if a.draft_windows == "auto" else a.draft_windows == "on") as m:
         for f in a.files:
             t = m.transcribe(f, single_pass=a.single_pass)
@@ -69,6 +69,8 @@ def main(argv=None) -> int:
     t.add_argument("--language", default="en", choices=["en", "zh"])
     t.add_argument("--gpu", default=None)
     t.add_argument("--no-diarize", action="store_true")
+    t.add_argument("--diarizer", choices=["pyannote", "nemotron"], default="pyannote",
+                   help="nemotron: Nemotron-3-Diarization, faster (needs NeMo 3.1+)")
     t.add_argument("--single-pass", action="store_true")
     t.add_argument("--json", action="store_true")
     t.set_defaults(func=_transcribe)

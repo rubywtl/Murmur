@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .attribute import attribute
-from .audio import SR, Diarizer, Timer, chunk_bounds, load_audio, max_length_bounds, resample, slice_audio
+from .audio import SR, Diarizer, Timer, chunk_bounds, load_audio, make_diarizer, max_length_bounds, resample, slice_audio
 from .models import ModelClient, get_model
 from .stitch import chunk_speaker_count, stitch
 from .types import Transcript
@@ -56,7 +56,8 @@ class Murmur:
     def load(cls, model: str = "vibevoice", *, url: str | None = None, draft_windows: bool | None = None,
              speculative: str | None = None, chunk_s: float = 330.0, batch_size: int = 8, language: str = "en",
              gpu: int | str | None = None, vllm_bin: str | None = None, draft_dir: str | Path | None = None,
-             diarize: bool = True, hf_token: str | None = None, served_name: str | None = None,
+             diarize: bool = True, diarizer: str = "pyannote", hf_token: str | None = None,
+             served_name: str | None = None,
              server_log: str | Path | None = None, single_pass_server: bool = False,
              gpu_memory_utilization: float | None = None, keep_failed_output: bool = False) -> "Murmur":
         """Load a model.
@@ -75,7 +76,9 @@ class Murmur:
         language       "en" or "zh"; picks the draft model (Whisper-tiny / Whisper-small).
         draft_dir      directory the client and server share for drafts (required with url=
                        and draft windows; it must match the server's MURMUR_DRAFT_DIR).
-        diarize        use pyannote for chunk boundaries and speaker linking (needs a HF token).
+        diarize        diarize for chunk boundaries and speaker linking.
+        diarizer       "pyannote" (speaker-diarization-3.1; needs a HF token) or "nemotron"
+                       (Nemotron-3-Diarization, faster; needs NeMo 3.1+, see NemotronDiarizer).
         gpu_memory_utilization  share of the GPU the started server takes (default 0.70, leaving
                        room for pyannote and the draft model on the same GPU).
         """
@@ -100,13 +103,13 @@ class Murmur:
             url = server.url
         client = client_cls(url, served_name=served_name)
         client.language = language
-        diarizer = Diarizer(hf_token) if diarize else None
+        diar = make_diarizer(diarizer, hf_token) if diarize else None
         drafter = None
         if draft_windows or not client_cls.diarizes:  # a text model needs the ASR's word times
             from .drafting.whisper_drafts import WhisperDrafter
             drafter = WhisperDrafter(language)
         return cls(client, server=server, chunk_s=chunk_s, batch_size=batch_size, draft_windows=draft_windows,
-                   draft_dir=draft_dir, language=language, diarizer=diarizer, drafter=drafter,
+                   draft_dir=draft_dir, language=language, diarizer=diar, drafter=drafter,
                    keep_failed_output=keep_failed_output, owns_draft_dir=owns)
 
     def transcribe(self, audio, sr: int | None = None, *, single_pass: bool = False,
@@ -117,7 +120,7 @@ class Murmur:
                      Audio longer than the model's ``max_audio_s`` is split into the fewest
                      pieces that fit, and their speakers are linked as for target chunks.
         timeline     a precomputed diarization timeline [(start, end, speaker), ...] to use
-                     instead of running pyannote (its time is then not counted).
+                     instead of running the diarizer (its time is then not counted).
         """
         return self.transcribe_batch([audio], sr=sr, single_pass=single_pass,
                                      timelines=None if timeline is None else [timeline])[0]
@@ -216,7 +219,7 @@ class Murmur:
         pieces = [(jobs[i][1], jobs[i][2], self.client.parse(replies[i].text, keep_raw=self.keep_failed_output))
                   for i in idx]
         tl = tls[r]
-        if tl and self.diarizer is not None and not single_pass:
+        if tl and self.diarizer is not None and not single_pass and getattr(self.diarizer, "min_speakers_hint", True):
             k = chunk_speaker_count([p[2] for p in pieces])
             if k > 1 and len({t[2] for t in tl}) < k:
                 with timer("rediarization"):
